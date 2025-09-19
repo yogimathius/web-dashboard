@@ -1,0 +1,328 @@
+// Prisma schema for AI Engines Dashboard
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  username    String   @unique
+  password    String
+  fullName    String?  @map("full_name")
+  avatar      String?
+  role        UserRole @default(USER)
+  
+  // Settings
+  preferences Json     @default("{}")
+  timezone    String   @default("UTC")
+  
+  // Status
+  isActive    Boolean  @default(true) @map("is_active")
+  lastLogin   DateTime? @map("last_login")
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  organizations OrganizationMember[]
+  agentSessions AgentSession[]
+  codexEntries  CodexEntry[]
+  alerts        Alert[]
+  dashboards    Dashboard[]
+  
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  plan        String   @default("free") // free, pro, enterprise
+  
+  // Settings
+  settings    Json     @default("{}")
+  
+  // Status
+  isActive    Boolean  @default(true) @map("is_active")
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  members     OrganizationMember[]
+  agents      Agent[]
+  codexItems  CodexEntry[]
+  
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String             @id @default(uuid())
+  role           OrganizationRole   @default(MEMBER)
+  joinedAt       DateTime           @default(now()) @map("joined_at")
+  
+  // Relationships
+  userId         String             @map("user_id")
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String             @map("organization_id")
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+model Agent {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  type          String   // gpt-4, claude-3, custom, etc.
+  status        AgentStatus @default(IDLE)
+  
+  // Configuration
+  config        Json     @default("{}")
+  capabilities  Json     @default("[]")
+  
+  // Metrics
+  totalSessions Int      @default(0) @map("total_sessions")
+  totalRequests Int      @default(0) @map("total_requests")
+  avgResponseTime Float  @default(0.0) @map("avg_response_time")
+  successRate   Float    @default(1.0) @map("success_rate")
+  
+  // Timestamps
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  lastActive    DateTime? @map("last_active")
+  
+  // Relationships
+  organizationId String  @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions       AgentSession[]
+  metrics        AgentMetric[]
+  
+  @@map("agents")
+}
+
+model AgentSession {
+  id            String   @id @default(uuid())
+  sessionType   String   @map("session_type") // conversation, task, analysis, etc.
+  status        SessionStatus @default(ACTIVE)
+  
+  // Session data
+  messages      Json     @default("[]")
+  metadata      Json     @default("{}")
+  
+  // Performance metrics
+  requestCount  Int      @default(0) @map("request_count")
+  totalTokens   Int      @default(0) @map("total_tokens")
+  avgLatency    Float    @default(0.0) @map("avg_latency")
+  errorCount    Int      @default(0) @map("error_count")
+  
+  // Timestamps
+  startedAt     DateTime @default(now()) @map("started_at")
+  endedAt       DateTime? @map("ended_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  agentId       String   @map("agent_id")
+  agent         Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("agent_sessions")
+}
+
+model AgentMetric {
+  id            String   @id @default(uuid())
+  metricType    String   @map("metric_type") // latency, tokens, errors, success_rate
+  value         Float
+  unit          String   // ms, count, percentage, etc.
+  
+  // Metadata
+  tags          Json     @default("{}")
+  dimensions    Json     @default("{}")
+  
+  // Timestamp
+  timestamp     DateTime @default(now())
+  
+  // Relationships
+  agentId       String   @map("agent_id")
+  agent         Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  @@map("agent_metrics")
+}
+
+model CodexEntry {
+  id            String   @id @default(uuid())
+  title         String
+  content       String
+  type          CodexType @default(KNOWLEDGE)
+  category      String?
+  tags          String[] @default([])
+  
+  // Sacred Codex specific
+  wisdom_level  Int      @default(1) @map("wisdom_level") // 1-10 scale
+  arcane_power  Float    @default(0.0) @map("arcane_power")
+  
+  // Content analysis
+  embedding     Json?    // Vector embedding for semantic search
+  summary       String?
+  keywords      String[] @default([])
+  
+  // Status
+  isPublic      Boolean  @default(false) @map("is_public")
+  isArchived    Boolean  @default(false) @map("is_archived")
+  
+  // Usage metrics
+  viewCount     Int      @default(0) @map("view_count")
+  shareCount    Int      @default(0) @map("share_count")
+  
+  // Timestamps
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  authorId      String   @map("author_id")
+  author        User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  organizationId String? @map("organization_id")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  
+  @@map("codex_entries")
+}
+
+model Alert {
+  id            String   @id @default(uuid())
+  title         String
+  message       String
+  type          AlertType @default(INFO)
+  severity      AlertSeverity @default(LOW)
+  
+  // Alert data
+  source        String   // agent_ops, sacred_codex, system
+  category      String   // performance, error, security, etc.
+  data          Json     @default("{}")
+  
+  // Status
+  isRead        Boolean  @default(false) @map("is_read")
+  isResolved    Boolean  @default(false) @map("is_resolved")
+  resolvedAt    DateTime? @map("resolved_at")
+  
+  // Timestamps
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("alerts")
+}
+
+model Dashboard {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  
+  // Dashboard configuration
+  layout        Json     @default("[]") // Widget layout and positions
+  widgets       Json     @default("[]") // Widget configurations
+  filters       Json     @default("{}")  // Global filters
+  
+  // Settings
+  isPublic      Boolean  @default(false) @map("is_public")
+  refreshInterval Int    @default(30) @map("refresh_interval") // seconds
+  
+  // Timestamps
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  lastViewed    DateTime? @map("last_viewed")
+  
+  // Relationships
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("dashboards")
+}
+
+model SystemHealth {
+  id            String   @id @default(uuid())
+  service       String   // api, database, redis, external_apis
+  status        HealthStatus @default(HEALTHY)
+  
+  // Metrics
+  responseTime  Float?   @map("response_time") // milliseconds
+  uptime        Float?   // percentage
+  errorRate     Float?   @map("error_rate") // percentage
+  
+  // Details
+  message       String?
+  details       Json     @default("{}")
+  
+  // Timestamp
+  checkedAt     DateTime @default(now()) @map("checked_at")
+  
+  @@map("system_health")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum OrganizationRole {
+  MEMBER
+  ADMIN
+  OWNER
+}
+
+enum AgentStatus {
+  IDLE
+  BUSY
+  ERROR
+  OFFLINE
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  FAILED
+  TIMEOUT
+}
+
+enum CodexType {
+  KNOWLEDGE
+  SPELL
+  RITUAL
+  WISDOM
+  PROPHECY
+}
+
+enum AlertType {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+  UNKNOWN
+}
